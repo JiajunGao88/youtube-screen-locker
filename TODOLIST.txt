@@ -1,0 +1,30 @@
+12/31/2024
+
+Need to Update:
+
+1. UI
+    - Color should be similar to YouTube but different, 应该使用高级同色调
+
+2. Feature
+    - 无法禁用Esc（Both platform）
+        - 有时，其他扩展或脚本可能会干扰您的事件处理。确保没有其他扩展或脚本在处理 Esc 键的事件
+        - 全屏模式的替代方案，需要创建一个覆盖层来模拟全屏效果，而不是使用浏览器的全屏API
+    - 无法禁用功能键，例如音量调节（Both platform）
+    - 禁用Windows键（MetaLeft）
+
+
+Priority:
+
+1. Write a test prompt to verify which Key can be stopped
+
+2. Follow the "Need to Update" list
+
+
+*****************************************************************************************************
+
+Updates Log:
+
+1/8/2025 (1.1)
+Fixed an issue where the status would not update when changed using the key combination for the first time.
+
+

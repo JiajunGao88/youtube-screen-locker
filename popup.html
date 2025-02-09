@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 240px;
+      padding: 16px;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #ffffff;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .header-icon {
+      width: 24px;
+      height: 24px;
+      fill: #FF0000;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2937;
+      margin: 0;
+    }
+
+    .status-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: #f3f4f6;
+      border-radius: 8px;
+    }
+
+    .status-label {
+      font-size: 14px;
+      color: #4b5563;
+    }
+
+    #lockStatus {
+      font-weight: 500;
+      color: #1f2937;
+    }
+
+    #toggleLock {
+      width: 100%;
+      padding: 12px;
+      background: #FF0000;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    #toggleLock:hover {
+      background: #CC0000;
+    }
+
+    #toggleLock:active {
+      transform: scale(0.98);
+    }
+
+    #toggleLock:disabled {
+      background: #e5e7eb;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .shortcut-info {
+      font-size: 12px;
+      color: #6b7280;
+      text-align: center;
+      padding: 8px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 
+                   Consolas, Liberation Mono, Courier New, monospace;
+    }
+
+    .lock-icon {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <svg class="header-icon" viewBox="0 0 24 24">
+        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
+      </svg>
+      <h1 class="header-title">YouTube Screen Locker</h1>
+    </div>
+
+    <div class="status-container">
+      <span class="status-label">Status:</span>
+      <span id="lockStatus">Unlocked</span>
+    </div>
+
+    <button id="toggleLock">
+      <svg class="lock-icon" viewBox="0 0 24 24">
+        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/>
+      </svg>
+      <span>Change Status</span>
+    </button>
+
+    <div class="shortcut-info">
+      Key Combo: Ctrl + Shift + L
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html> 
