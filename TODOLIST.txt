@@ -27,4 +27,17 @@ Updates Log:
 1/8/2025 (1.1)
 Fixed an issue where the status would not update when changed using the key combination for the first time.
 
+11/6/2026 (2.0.0)
+- Per-tab lock state. Removed the global isLocked flag that unlocked every YouTube tab when a second tab opened.
+- Recover content scripts on already-open tabs after install/update (scripting permission, no new warning) so the popup and shortcut no longer die with "Receiving end does not exist".
+- Hostname check uses the URL host, not a substring.
+- Overlay re-parents into document.fullscreenElement, z-index 2147483647, closed shadow DOM HUD.
+- Hold 1s to unlock. A click no longer unlocks. Ctrl/Cmd+Shift+L still toggles.
+- Block mousedown/mouseup, pointer, dblclick, contextmenu, auxclick, drag, touch, selectstart, wheel, and the YouTube keyboard surface.
+- Optional in-player lock button.
+- Deep fullscreen lock via navigator.keyboard.lock(), with an in-page chip when the popup has no user gesture. Fullscreen exit releases the keyboard lock and keeps the screen lock.
+- MAIN-world Media Session no-op guard plus video volume/playback guard. Spoofed page unlocks are rejected.
+- Toolbar badge per tab. Popup settings for deep lock, media keys, and the player button.
+- Documented Windows vs macOS limits: OS master volume and Ctrl+Alt+Del stay outside Chrome; macOS has no OS modifier hook.
+
 

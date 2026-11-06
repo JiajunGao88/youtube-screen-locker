@@ -1,0 +1,13 @@
+{
+  "name": "youtube-screen-locker",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Lock YouTube against accidental clicks, shortcuts, and hardware media keys.",
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "zip": "node scripts/build-zip.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
