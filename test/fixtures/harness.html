@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>YouTube Screen Locker harness</title>
+</head>
+<body>
+  <div id="movie_player"><div class="ytp-right-controls"></div></div>
+  <script src="/lib/constants.js"></script>
+  <script src="/lib/platform.js"></script>
+  <script src="/lib/hostname.js"></script>
+  <script src="/lib/settings.js"></script>
+  <script src="/lib/hold-unlock.js"></script>
+  <script src="/lib/event-guard.js"></script>
+  <script src="/lib/fullscreen-lock.js"></script>
+  <script src="/lib/hud.js"></script>
+  <script src="/lib/screen-locker.js"></script>
+  <script>
+    const failed = [];
+    const errors = [];
+    window.addEventListener('error', (event) => {
+      errors.push(String(event.message || event.error || 'error'));
+    });
+    const originalError = console.error;
+    console.error = (...args) => {
+      errors.push(args.map(String).join(' '));
+      originalError.apply(console, args);
+    };
+    function check(cond, message) {
+      if (!cond) failed.push(message);
+    }
+    try {
+      const chromeMock = {
+        runtime: {
+          sendMessage() { return Promise.resolve(); },
+          onMessage: { addListener() {} },
+          getManifest() { return { version: '2.0.0' }; }
+        },
+        storage: {
+          local: { get(defaults, cb) { cb(Object.assign({}, defaults)); } },
+          onChanged: { addListener() {} }
+        }
+      };
+      const locker = YTLock.createScreenLocker({
+        document,
+        window,
+        navigator,
+        chrome: chromeMock
+      });
+      check(locker.debug.hud.host.shadowRoot === null, 'shadow root is closed');
+      locker.lock();
+      const z = getComputedStyle(locker.debug.hud.host).zIndex;
+      check(z === '2147483647', 'z-index ' + z);
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true });
+      document.body.dispatchEvent(click);
+      check(click.defaultPrevented, 'click prevented');
+      const dbl = new MouseEvent('dblclick', { bubbles: true, cancelable: true, composed: true });
+      document.body.dispatchEvent(dbl);
+      check(dbl.defaultPrevented, 'dblclick prevented');
+      const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, composed: true });
+      document.body.dispatchEvent(menu);
+      check(menu.defaultPrevented, 'contextmenu prevented');
+      const shortcut = new KeyboardEvent('keydown', {
+        key: 'l', code: 'KeyL', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true
+      });
+      const before = locker.getState().locked;
+      document.body.dispatchEvent(shortcut);
+      check(locker.getState().locked === before, 'untrusted shortcut does not toggle');
+      check(!!document.getElementById('movie_player').querySelector('.ytl-lock-btn'), 'player button exists');
+    } catch (err) {
+      errors.push(String(err && err.stack || err));
+    }
+    document.documentElement.dataset.yslResult = JSON.stringify({
+      ok: failed.length === 0 && errors.length === 0,
+      failed,
+      errors
+    });
+  </script>
+</body>
+</html>
