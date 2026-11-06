@@ -17,8 +17,7 @@
     brand: 'yt-screen-locker-main-v2',
     ensureArmed: function (seal, token) { return controller.ensureArmed(seal, token); },
     update: function (seal, token, state) { return controller.update(seal, token, state); },
-    getState: function () { return controller.getState(); },
-    handleExternalEvent: function (detail) { return controller.handleExternalEvent(detail); }
+    getState: function () { return controller.getState(); }
   };
 
   try {
@@ -30,11 +29,5 @@
     });
   } catch (err) {
     root.__YT_SCREEN_LOCKER_MAIN_GUARD__ = api;
-  }
-
-  if (root.document && typeof root.document.addEventListener === 'function') {
-    root.document.addEventListener('yt-screen-locker-cmd', function (event) {
-      controller.handleExternalEvent(event && event.detail);
-    });
   }
 })();

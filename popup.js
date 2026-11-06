@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var isMac = YTLock.isMacPlatform(navigator);
   var tabId = null;
   var viewState = null;
+  var storedSettings = null;
 
   try {
     versionEl.textContent = 'v' + chrome.runtime.getManifest().version;
@@ -24,7 +25,7 @@ document.addEventListener('DOMContentLoaded', function () {
       isYouTube: isYouTube,
       state: state,
       isMac: isMac,
-      settings: state && state.settings
+      settings: storedSettings
     });
     statusEl.textContent = view.status;
     statusEl.className = 'pill ' + (view.tone === 'open' ? 'open' : view.tone === 'idle' ? '' : view.tone);
@@ -44,7 +45,27 @@ document.addEventListener('DOMContentLoaded', function () {
     return tabs && tabs[0];
   }
 
+  function readStoredSettings() {
+    return new Promise(function (resolve) {
+      var settled = false;
+      function finish(items) {
+        if (settled) return;
+        settled = true;
+        resolve(items || {});
+      }
+      try {
+        var pending = chrome.storage.local.get(YTLock.DEFAULT_SETTINGS, finish);
+        if (pending && typeof pending.then === 'function') {
+          pending.then(finish, function () { finish({}); });
+        }
+      } catch (err) {
+        finish({});
+      }
+    });
+  }
+
   async function refresh() {
+    storedSettings = await readStoredSettings();
     var tab = await activeTab();
     tabId = tab && tab.id;
     var onYouTube = !!(tab && YTLock.isYouTubeUrl(tab.url));

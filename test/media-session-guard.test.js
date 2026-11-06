@@ -96,11 +96,19 @@ test('MAIN world rejects spoofed unlocks and keeps the seal off the page', () =>
   assert.equal(api.update(SEAL, 'real-session-token', { locked: true, blockMediaKeys: true, guardVolume: true }), true);
   assert.equal(typeof session.handlers.pause, 'function');
   assert.equal(session.handlers.pause.name, 'ytScreenLockerMediaNoop');
+  assert.equal(listeners.some((entry) => entry.type === 'yt-screen-locker-cmd'), false);
+  assert.equal(fs.readFileSync(path.join(__dirname, '../main-world-guard.js'), 'utf8').includes('yt-screen-locker-cmd'), false);
 
-  const eventListener = listeners.find((entry) => entry.type === 'yt-screen-locker-cmd');
-  eventListener.fn({ detail: { state: { locked: false, blockMediaKeys: true, guardVolume: false } } });
+  try {
+    context.__YT_SCREEN_LOCKER_MAIN_GUARD__ = {
+      brand: 'spoof',
+      update: function () { return true; }
+    };
+  } catch (err) {
+    // Non-configurable property throws in strict contexts.
+  }
+  assert.equal(context.__YT_SCREEN_LOCKER_MAIN_GUARD__.brand, 'yt-screen-locker-main-v2');
+  assert.equal(api.update('wrong-seal', 'real-session-token', { locked: false }), false);
   assert.equal(api.getState().locked, true);
   assert.equal(session.handlers.pause.name, 'ytScreenLockerMediaNoop');
-  api.update('nope', 'real-session-token', { locked: false });
-  assert.equal(api.getState().locked, true);
 });

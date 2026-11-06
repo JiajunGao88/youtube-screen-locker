@@ -209,7 +209,8 @@ test('keyboard.lock is skipped safely when the API is missing', async () => {
   await flush();
   assert.equal(env.locker.getState().locked, true);
   assert.equal(env.locker.getState().deepActive, false);
-  assert.equal(env.locker.getState().needsGesture, true);
+  assert.equal(env.locker.getState().needsGesture, false);
+  assert.equal(env.locker.debug.hud.chip.hidden, true);
 });
 
 test('the player button locks with one click and does not unlock', () => {
@@ -226,6 +227,110 @@ test('the player button locks with one click and does not unlock', () => {
   assert.equal(env.locker.getState().locked, true);
   env.locker.applySettings({ showPlayerButton: false });
   assert.equal(bar.querySelector('.ytl-lock-btn'), null);
+});
+
+test('a second finger or long-press menu does not abort the hold', () => {
+  const env = setup();
+  env.locker.lock();
+  const hold = env.locker.debug.hud.holdBtn;
+  hold._rect = { left: 100, top: 500, right: 240, bottom: 560, width: 140, height: 60 };
+  fire(env.document.body, 'pointerdown', { pointerId: 1, clientX: 140, clientY: 520, isTrusted: true });
+  fire(env.document.body, 'pointerdown', { pointerId: 2, clientX: 8, clientY: 8, isTrusted: true });
+  fire(env.document.body, 'pointermove', { pointerId: 2, clientX: 8, clientY: 8, isTrusted: true });
+  fire(env.document.body, 'pointerup', { pointerId: 2, clientX: 8, clientY: 8, isTrusted: true });
+  fire(env.document.body, 'pointercancel', { pointerId: 2, clientX: 8, clientY: 8, isTrusted: true });
+  const menu = fire(env.document.body, 'contextmenu', { pointerId: 1, clientX: 140, clientY: 520, isTrusted: true });
+  assert.equal(menu.defaultPrevented, true);
+  env.clock.advance(999);
+  assert.equal(env.locker.getState().locked, true);
+  env.clock.advance(1);
+  assert.equal(env.locker.getState().locked, false);
+});
+
+test('an empty touchend list does not release a pointer-tracked hold', () => {
+  const env = setup();
+  env.locker.lock();
+  const hold = env.locker.debug.hud.holdBtn;
+  hold._rect = { left: 100, top: 500, right: 240, bottom: 560, width: 140, height: 60 };
+  fire(env.document.body, 'pointerdown', { pointerId: 4, clientX: 140, clientY: 520, isTrusted: true });
+  fire(env.document.body, 'touchend', {
+    isTrusted: true,
+    touches: { length: 0 },
+    changedTouches: { length: 1, 0: { clientX: 4, clientY: 4 } }
+  });
+  env.clock.advance(1000);
+  assert.equal(env.locker.getState().locked, false);
+});
+
+test('a delayed command does not undo the keydown, and an explicit unlock is immediate', () => {
+  const env = setup();
+  fire(env.document.body, 'keydown', { key: 'l', ctrlKey: true, shiftKey: true, isTrusted: true });
+  assert.equal(env.locker.getState().locked, true);
+  env.clock.advance(800);
+  let response;
+  env.locker.handleMessage({ action: 'toggleLock' }, (value) => { response = value; });
+  assert.equal(response.locked, true);
+  env.clock.advance(800);
+  env.locker.handleMessage({ action: 'toggleLock' }, (value) => { response = value; });
+  assert.equal(response.locked, false);
+
+  const follow = setup();
+  follow.locker.handleMessage({ action: 'toggleLock' }, (value) => { response = value; });
+  assert.equal(response.locked, true);
+  follow.clock.advance(200);
+  fire(follow.document.body, 'keydown', { key: 'l', ctrlKey: true, shiftKey: true, isTrusted: true });
+  assert.equal(follow.locker.getState().locked, true);
+  follow.clock.advance(500);
+  fire(follow.document.body, 'keydown', { key: 'l', ctrlKey: true, shiftKey: true, isTrusted: true });
+  assert.equal(follow.locker.getState().locked, false);
+
+  const direct = setup();
+  direct.locker.handleMessage({ action: 'lock' }, (value) => { response = value; });
+  direct.locker.handleMessage({ action: 'unlock' }, (value) => { response = value; });
+  assert.equal(response.locked, false);
+  direct.locker.handleMessage({ action: 'lock' }, (value) => { response = value; });
+  assert.equal(response.locked, true);
+});
+
+test('the deep-lock chip follows the setting and reappears with the hud', () => {
+  const off = setup({ keyboard: { lock: async () => {}, unlock() {} } });
+  off.locker.applySettings({ deepLock: false });
+  off.locker.lock();
+  assert.equal(off.locker.debug.hud.chip.hidden, true);
+  assert.equal(off.locker.debug.hud.chip.dataset.ytlActive, '0');
+
+  const on = setup({ keyboard: { lock: async () => {}, unlock() {} } });
+  on.locker.lock();
+  assert.equal(on.locker.debug.hud.chip.hidden, false);
+  assert.equal(on.locker.debug.hud.chip.dataset.ytlActive, '1');
+  on.clock.advance(4000);
+  assert.equal(on.locker.debug.hud.chip.dataset.ytlActive, '0');
+  fire(on.document.body, 'pointermove', { clientX: 1200, clientY: 680, isTrusted: true });
+  assert.equal(on.locker.debug.hud.isShown(), true);
+  assert.equal(on.locker.debug.hud.chip.dataset.ytlActive, '1');
+});
+
+test('the player button engages keyboard lock when already fullscreen', async () => {
+  const calls = [];
+  const env = setup({
+    keyboard: {
+      lock: async () => { calls.push('lock'); },
+      unlock() {}
+    }
+  });
+  const player = env.document.createElement('div');
+  player.id = 'movie_player';
+  const bar = env.document.createElement('div');
+  bar.className = 'ytp-right-controls';
+  player.appendChild(bar);
+  env.document.body.appendChild(player);
+  env.document.fullscreenElement = player;
+  env.locker.applySettings({ showPlayerButton: true, deepLock: true });
+  fire(bar.querySelector('.ytl-lock-btn'), 'click', { isTrusted: true });
+  await flush();
+  assert.equal(env.locker.getState().locked, true);
+  assert.equal(env.locker.getState().deepActive, true);
+  assert.equal(calls.includes('lock'), true);
 });
 
 test('messages report per-tab state and ping responds', () => {

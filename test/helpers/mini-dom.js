@@ -15,6 +15,7 @@ class MiniEvent {
     this.clientY = options.clientY || 0;
     this.touches = options.touches;
     this.changedTouches = options.changedTouches;
+    this.pointerId = typeof options.pointerId === 'number' ? options.pointerId : undefined;
     this.isTrusted = options.isTrusted !== false;
     this.detail = options.detail;
     this.defaultPrevented = false;
