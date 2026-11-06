@@ -70,6 +70,7 @@ async function assertChipGesture(send, kind) {
       const chip = window.__YSL.chip;
       const rect = chip.getBoundingClientRect();
       window.__YSL.activation = null;
+      window.__YSL.activations = [];
       window.__YSL.fullscreenCalls = 0;
       return {
         x: rect.left + rect.width / 2,
@@ -84,32 +85,38 @@ async function assertChipGesture(send, kind) {
   const point = pointEval.result && pointEval.result.result && pointEval.result.result.value;
   assert.ok(point && point.w > 0 && point.h > 0, kind + ' chip has no layout ' + JSON.stringify(point));
   assert.equal(point.hidden, false, kind + ' chip is hidden');
-  if (kind === 'mouse') {
-    await send('Input.dispatchMouseEvent', {
-      type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1
-    });
-    await send('Input.dispatchMouseEvent', {
-      type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1
-    });
-  } else {
-    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-    await send('Input.dispatchTouchEvent', {
-      type: 'touchStart',
-      touchPoints: [{ x: point.x, y: point.y, id: 1 }]
-    });
-    await send('Input.dispatchTouchEvent', {
-      type: 'touchEnd',
-      touchPoints: []
-    });
+  async function gesture(id) {
+    if (kind === 'mouse') {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1
+      });
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1
+      });
+    } else {
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      await send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: point.x, y: point.y, id }]
+      });
+      await send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: []
+      });
+    }
   }
-  await wait(100);
+  await gesture(1);
+  await wait(80);
+  await gesture(2);
+  await wait(80);
   const outcome = await send('Runtime.evaluate', {
-    expression: '({ activation: window.__YSL.activation, calls: window.__YSL.fullscreenCalls, clicks: window.__YSL.playerClicks() })',
+    expression: '({ activation: window.__YSL.activation, activations: window.__YSL.activations, calls: window.__YSL.fullscreenCalls, clicks: window.__YSL.playerClicks() })',
     returnByValue: true
   });
   const value = outcome.result && outcome.result.result && outcome.result.result.value;
-  assert.equal(value.calls >= 1, true, kind + ' did not request fullscreen');
-  assert.equal(value.activation, true, kind + ' lost transient user activation ' + JSON.stringify(value));
+  assert.equal(value.calls, 2, kind + ' second tap did not request fullscreen ' + JSON.stringify(value));
+  assert.equal(value.activations.length, 2, kind + ' activations ' + JSON.stringify(value));
+  assert.equal(value.activations.every(Boolean), true, kind + ' lost transient user activation ' + JSON.stringify(value));
   assert.equal(value.clicks, 0, kind + ' reached the player');
 }
 

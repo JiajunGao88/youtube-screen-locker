@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createMediaSessionGuard, createMainController, ACTIONS } = require('../lib/media-session-guard');
+const { deliverMainCommand } = require('../lib/background-controller');
+const { bootMainRealm, openClosedShadow } = require('./helpers/main-realm');
 
 function mockSession() {
   const handlers = {};
@@ -138,76 +140,60 @@ test('disabling media-key blocking restores handlers while the screen stays lock
   assert.equal(session.handlers.pause, pause);
 });
 
-test('MAIN world rejects spoofed unlocks and keeps the seal off the page', () => {
-  const session = mockSession();
-  const listeners = [];
-  const context = {
-    console,
-    Object,
-    Array,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-    Promise,
-    Error,
-    Date,
-    Math,
-    navigator: { mediaSession: session },
-    document: {
-      addEventListener(type, fn) { listeners.push({ type, fn }); },
-      querySelectorAll() { return []; },
-      documentElement: {}
-    }
-  };
-  context.globalThis = context;
-  context.window = context;
-  vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../lib/media-session-guard.js'), 'utf8'), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../lib/video-guard.js'), 'utf8'), context);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../main-world-guard.js'), 'utf8'), context);
-
-  assert.equal(context.SEAL, undefined);
-  assert.equal(context.__YTL_FACTORIES__.SEAL, undefined);
+test('page scripts cannot see a rebind hook or the closed command channel', () => {
+  const realm = bootMainRealm();
+  const context = realm.context;
+  const seen = [];
+  context.addEventListener('ytl-main-cmd', () => seen.push('window'), true);
+  context.document.addEventListener('ytl-main-cmd', () => seen.push('document'), true);
+  assert.equal(context.__YTL_FACTORIES__, undefined);
   const api = context.__YT_SCREEN_LOCKER_MAIN_GUARD__;
+  assert.deepEqual(Object.getOwnPropertyNames(api).sort(), ['brand', 'ensureArmed', 'getState', 'update']);
+  assert.equal(api.privilegedRebind, undefined);
+  assert.equal(api.rebindMainGuard, undefined);
+  const host = context.document.querySelector('[data-ytl-main-bridge="1"]');
+  assert.ok(host);
+  assert.equal(host.shadowRoot, null);
+  assert.equal(context.document.querySelector('[data-ytl-role="main-inbox"]'), null);
   const guess = 'e'.repeat(40);
   const tokenA = 'token-aaaaaaaaaaaaaaa';
-  const tokenB = 'token-bbbbbbbbbbbbbbb';
   assert.equal(api.ensureArmed(guess, tokenA), false);
-  assert.equal(api.update(guess, tokenA, { locked: true, blockMediaKeys: true, guardVolume: true }), false);
+  assert.equal(api.update(guess, tokenA, { locked: false, blockMediaKeys: false, guardVolume: false }), false);
   assert.equal(api.getState().locked, false);
-  const armed = context.__YTL_FACTORIES__.rebindMainGuard('c'.repeat(32), tokenA, {
-    locked: true,
-    blockMediaKeys: true,
-    guardVolume: true
-  });
-  assert.equal(armed.ok, true);
-  assert.equal(api.ensureArmed(guess, tokenB), false);
-  assert.equal(api.update(guess, tokenA, { locked: false }), false);
-  assert.equal(api.getState().locked, true);
-  assert.equal(session.handlers.pause.name, 'ytScreenLockerMediaNoop');
-  const rotated = context.__YTL_FACTORIES__.rebindMainGuard('a'.repeat(32), tokenB, {
-    locked: false,
-    blockMediaKeys: false,
-    guardVolume: false
-  });
-  assert.equal(rotated.ok, true);
-  assert.equal(api.getState().locked, false);
-  assert.equal(api.getState().blockMediaKeys, false);
-  assert.equal(api.update('c'.repeat(32), tokenA, { locked: true, blockMediaKeys: true, guardVolume: true }), false);
-  assert.equal(api.getState().locked, false);
-  assert.equal(listeners.some((entry) => entry.type === 'yt-screen-locker-cmd'), false);
-  assert.equal(fs.readFileSync(path.join(__dirname, '../main-world-guard.js'), 'utf8').includes('yt-screen-locker-cmd'), false);
 
+  const previousDocument = global.document;
+  const previousChrome = global.chrome;
+  global.document = context.document;
+  global.chrome = { dom: { openOrClosedShadowRoot: openClosedShadow } };
   try {
-    context.__YT_SCREEN_LOCKER_MAIN_GUARD__ = {
-      brand: 'spoof',
-      update: function () { return true; }
-    };
-  } catch (err) {
-    // Non-configurable property throws in strict contexts.
+    const armed = deliverMainCommand('c'.repeat(32), tokenA, {
+      locked: true,
+      blockMediaKeys: true,
+      guardVolume: true
+    });
+    assert.equal(armed.ok, true);
+    assert.deepEqual(seen, []);
+    assert.equal(api.getState().locked, true);
+    assert.equal(api.update(guess, tokenA, { locked: false }), false);
+    assert.equal(api.getState().locked, true);
+    const dir = path.resolve(__dirname, '..');
+    for (const file of ['lib/media-session-guard.js', 'lib/video-guard.js', 'main-world-guard.js']) {
+      vm.runInContext(fs.readFileSync(path.join(dir, file), 'utf8'), context, { filename: file });
+    }
+    assert.equal(context.__YTL_FACTORIES__, undefined);
+    assert.equal(context.__YT_SCREEN_LOCKER_MAIN_GUARD__, api);
+    const tokenB = 'token-bbbbbbbbbbbbbbb';
+    const rotated = deliverMainCommand('a'.repeat(32), tokenB, {
+      locked: false,
+      blockMediaKeys: false,
+      guardVolume: false
+    });
+    assert.equal(rotated.ok, true);
+    assert.equal(api.getState().locked, false);
+    assert.equal(api.getState().blockMediaKeys, false);
+    assert.deepEqual(seen, []);
+  } finally {
+    global.document = previousDocument;
+    global.chrome = previousChrome;
   }
-  assert.equal(context.__YT_SCREEN_LOCKER_MAIN_GUARD__.brand, 'yt-screen-locker-main-v2');
-  assert.equal(api.update('wrong-seal', tokenB, { locked: true }), false);
-  assert.equal(api.getState().locked, false);
 });

@@ -202,6 +202,55 @@ test('deep lock without a user gesture asks for the in-page chip', async () => {
   assert.equal(env.document.fullscreenElement, player);
 });
 
+test('a second chip gesture works, and untrusted or slid touches do not', async () => {
+  const env = setup({ keyboard: { lock: async () => {}, unlock() {} } });
+  const player = env.document.createElement('div');
+  player.id = 'movie_player';
+  let calls = 0;
+  player.requestFullscreen = async () => { calls += 1; };
+  env.document.body.appendChild(player);
+  env.locker.lock();
+  env.locker.debug.hud.chip._rect = { left: 10, top: 10, right: 200, bottom: 40, width: 190, height: 30 };
+
+  fire(env.document.body, 'pointerdown', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(env.document.body, 'pointerup', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(env.document.body, 'pointerdown', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(env.document.body, 'pointerup', { clientX: 20, clientY: 20, isTrusted: true });
+  await flush();
+  assert.equal(calls, 2);
+
+  const touch = setup({ keyboard: { lock: async () => {}, unlock() {} } });
+  const touchPlayer = touch.document.createElement('div');
+  touchPlayer.id = 'movie_player';
+  let touchCalls = 0;
+  touchPlayer.requestFullscreen = async () => { touchCalls += 1; };
+  touch.document.body.appendChild(touchPlayer);
+  touch.locker.lock();
+  touch.locker.debug.hud.chip._rect = { left: 10, top: 10, right: 200, bottom: 40, width: 190, height: 30 };
+  fire(touch.document.body, 'touchstart', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(touch.document.body, 'touchend', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(touch.document.body, 'touchstart', { clientX: 20, clientY: 20, isTrusted: true });
+  fire(touch.document.body, 'touchend', { clientX: 20, clientY: 20, isTrusted: true });
+  await flush();
+  assert.equal(touchCalls, 2);
+
+  const blocked = setup({ keyboard: { lock: async () => {}, unlock() {} } });
+  const blockedPlayer = blocked.document.createElement('div');
+  blockedPlayer.id = 'movie_player';
+  let blockedCalls = 0;
+  blockedPlayer.requestFullscreen = async () => { blockedCalls += 1; };
+  blocked.document.body.appendChild(blockedPlayer);
+  blocked.locker.lock();
+  blocked.locker.debug.hud.chip._rect = { left: 10, top: 10, right: 200, bottom: 40, width: 190, height: 30 };
+  fire(blocked.document.body, 'touchend', { clientX: 20, clientY: 20, isTrusted: false });
+  fire(blocked.document.body, 'pointerup', { clientX: 20, clientY: 20, pointerType: 'touch', isTrusted: false });
+  fire(blocked.document.body, 'click', { clientX: 20, clientY: 20, isTrusted: false });
+  fire(blocked.document.body, 'touchstart', { clientX: 1, clientY: 1, isTrusted: true });
+  fire(blocked.document.body, 'touchend', { clientX: 20, clientY: 20, isTrusted: true });
+  await flush();
+  assert.equal(blockedCalls, 0);
+});
+
 test('keyboard.lock is skipped safely when the API is missing', async () => {
   const env = setup();
   env.document.fullscreenElement = env.document.body;

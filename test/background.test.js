@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createBackgroundController, mainGuardApply } = require('../lib/background-controller');
-const { createMainController } = require('../lib/media-session-guard');
+const { createBackgroundController } = require('../lib/background-controller');
+const { bootMainRealm, openClosedShadow } = require('./helpers/main-realm');
 const { ISOLATED_FILES, MAIN_FILES } = require('../lib/script-files');
 
 function createChrome(options = {}) {
@@ -110,58 +110,46 @@ test('install clears the legacy flag and a rotated secret can rebind an open tab
   assert.equal(chrome.storage.saved.deepLock, true);
   assert.equal(Object.prototype.hasOwnProperty.call(chrome.storage.saved, 'isLocked'), false);
 
-  const session = { handlers: {}, setActionHandler(action, handler) { this.handlers[action] = handler; } };
-  const main = createMainController({ mediaSession: session });
-  globalThis.__YTL_FACTORIES__ = { rebindMainGuard: main.privilegedRebind };
-  globalThis.__YT_SCREEN_LOCKER_MAIN_GUARD__ = {
-    ensureArmed: main.ensureArmed,
-    update: main.update,
-    getState: main.getState
-  };
+  const realm = bootMainRealm();
+  const api = realm.context.__YT_SCREEN_LOCKER_MAIN_GUARD__;
+  assert.equal(realm.context.__YTL_FACTORIES__, undefined);
   const guess = 'f'.repeat(40);
-  assert.equal(main.ensureArmed(guess, 'token-aaaaaaaaaaaaaaa'), false);
-  assert.equal(main.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: true, blockMediaKeys: true, guardVolume: true }), false);
-  assert.equal(main.getState().locked, false);
+  assert.equal(api.ensureArmed(guess, 'token-aaaaaaaaaaaaaaa'), false);
+  assert.equal(api.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: true, blockMediaKeys: true, guardVolume: true }), false);
 
-  const first = await new Promise((resolve) => {
-    controller.handleMessage({
-      type: 'sync-main',
-      token: 'token-aaaaaaaaaaaaaaa',
-      state: { locked: true, blockMediaKeys: true, guardVolume: true }
-    }, { tab: { id: 3 } }, resolve);
-  });
-  assert.equal(first.ok, true);
-  assert.equal(main.getState().locked, true);
-  assert.equal(typeof session.handlers.pause, 'function');
-  assert.equal(main.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: false }), false);
-  assert.equal(main.getState().locked, true);
+  const previousDocument = global.document;
+  const previousChrome = global.chrome;
+  global.document = realm.context.document;
+  global.chrome = { dom: { openOrClosedShadowRoot: openClosedShadow } };
+  try {
+    const first = await new Promise((resolve) => {
+      controller.handleMessage({
+        type: 'sync-main',
+        token: 'token-aaaaaaaaaaaaaaa',
+        state: { locked: true, blockMediaKeys: true, guardVolume: true }
+      }, { tab: { id: 3 } }, resolve);
+    });
+    assert.equal(first.ok, true);
+    assert.equal(chrome.scripts.at(-1).world, 'ISOLATED');
+    assert.equal(api.getState().locked, true);
+    assert.equal(api.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: false }), false);
 
-  sessionStore.ytlRuntimeSecret = 'ab'.repeat(32);
-  const second = await new Promise((resolve) => {
-    controller.handleMessage({
-      type: 'sync-main',
-      token: 'token-bbbbbbbbbbbbbbb',
-      state: { locked: false, blockMediaKeys: false, guardVolume: false }
-    }, { tab: { id: 3 } }, resolve);
-  });
-  assert.equal(second.ok, true);
-  assert.equal(main.getState().locked, false);
-  assert.equal(main.getState().blockMediaKeys, false);
-  assert.equal(main.update(sessionStore.ytlRuntimeSecret, 'token-aaaaaaaaaaaaaaa', { locked: true }), false);
-  assert.equal(main.update(sessionStore.ytlRuntimeSecret, 'token-bbbbbbbbbbbbbbb', {
-    locked: true,
-    blockMediaKeys: false,
-    guardVolume: true
-  }), true);
-  const direct = mainGuardApply('cd'.repeat(16), 'token-ccccccccccccccc', {
-    locked: false,
-    blockMediaKeys: true,
-    guardVolume: false
-  });
-  assert.equal(direct.ok, true);
-  assert.equal(main.getState().locked, false);
-  delete globalThis.__YTL_FACTORIES__;
-  delete globalThis.__YT_SCREEN_LOCKER_MAIN_GUARD__;
+    sessionStore.ytlRuntimeSecret = 'ab'.repeat(32);
+    const second = await new Promise((resolve) => {
+      controller.handleMessage({
+        type: 'sync-main',
+        token: 'token-bbbbbbbbbbbbbbb',
+        state: { locked: false, blockMediaKeys: false, guardVolume: false }
+      }, { tab: { id: 3 } }, resolve);
+    });
+    assert.equal(second.ok, true);
+    assert.equal(api.getState().locked, false);
+    assert.equal(api.getState().blockMediaKeys, false);
+    assert.equal(realm.context.__YTL_FACTORIES__, undefined);
+  } finally {
+    global.document = previousDocument;
+    global.chrome = previousChrome;
+  }
 });
 
 test('navigation away from YouTube clears the badge', async () => {

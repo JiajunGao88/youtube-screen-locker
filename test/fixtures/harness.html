@@ -83,11 +83,14 @@
         hold: locker.debug.hud.holdBtn,
         host: locker.debug.hud.host,
         activation: null,
+        activations: [],
         fullscreenCalls: 0,
         playerClicks: () => playerClicks
       };
       player.requestFullscreen = function requestFullscreen() {
-        window.__YSL.activation = !!(navigator.userActivation && navigator.userActivation.isActive);
+        const active = !!(navigator.userActivation && navigator.userActivation.isActive);
+        window.__YSL.activation = active;
+        window.__YSL.activations.push(active);
         window.__YSL.fullscreenCalls += 1;
         return Promise.resolve();
       };
