@@ -333,6 +333,25 @@ test('the player button engages keyboard lock when already fullscreen', async ()
   assert.equal(calls.includes('lock'), true);
 });
 
+test('cancelling a hold after the first hide window schedules another auto-hide', () => {
+  const env = setup();
+  env.locker.lock();
+  const hold = env.locker.debug.hud.holdBtn;
+  hold._rect = { left: 100, top: 500, right: 240, bottom: 560, width: 140, height: 60 };
+  env.clock.advance(3500);
+  fire(env.document.body, 'pointerdown', { pointerId: 7, clientX: 140, clientY: 520, isTrusted: true });
+  env.clock.advance(600);
+  assert.equal(env.locker.getState().locked, true);
+  assert.equal(env.locker.debug.hud.isShown(), true);
+  fire(env.document.body, 'pointerup', { pointerId: 7, clientX: 140, clientY: 520, isTrusted: true });
+  assert.equal(env.locker.debug.hud.isShown(), true);
+  env.clock.advance(3999);
+  assert.equal(env.locker.debug.hud.isShown(), true);
+  env.clock.advance(1);
+  assert.equal(env.locker.debug.hud.isShown(), false);
+  assert.equal(env.locker.getState().locked, true);
+});
+
 test('messages report per-tab state and ping responds', () => {
   const env = setup();
   let ping;

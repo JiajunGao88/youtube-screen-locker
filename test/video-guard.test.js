@@ -81,6 +81,26 @@ test('volume, mute, and accidental pause are held while locked', () => {
   assert.equal(plays, 1);
 });
 
+test('disabling media keys allows pause while volume stays guarded', () => {
+  const Fake = createMediaClass();
+  let plays = 0;
+  const basePlay = Fake.prototype.play;
+  Fake.prototype.play = function play() {
+    plays += 1;
+    return basePlay.call(this);
+  };
+  const video = new Fake();
+  const guard = guardFor(Fake, [video]);
+  guard.setState({ locked: true, blockMediaKeys: false, guardVolume: true });
+  video.pause();
+  assert.equal(video.paused, true);
+  assert.equal(plays, 0);
+  video.volume = 0.25;
+  video.muted = true;
+  assert.equal(video.volume, 1);
+  assert.equal(video.muted, false);
+});
+
 test('natural end, buffering, and ad source changes are not forced back to play', () => {
   const Fake = createMediaClass();
   let plays = 0;
