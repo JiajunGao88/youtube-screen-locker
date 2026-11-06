@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createBackgroundController, mainGuardApply } = require('../lib/background-controller');
+const { createMainController } = require('../lib/media-session-guard');
 const { ISOLATED_FILES, MAIN_FILES } = require('../lib/script-files');
-const { SEAL } = require('../lib/constants');
 
 function createChrome(options = {}) {
   const scripts = [];
@@ -97,29 +97,70 @@ test('the shortcut ignores non-YouTube tabs and toggles a YouTube tab', async ()
   assert.equal(controller.tabState.get(9).locked, true);
 });
 
-test('install clears the legacy global flag and sync rejects a spoofed token', async () => {
+test('install clears the legacy flag and a rotated secret can rebind an open tab', async () => {
   const chrome = createChrome({ tabs: [] });
+  const sessionStore = {};
+  chrome.storage.session = {
+    async get(key) { return { [key]: sessionStore[key] }; },
+    async set(value) { Object.assign(sessionStore, value); }
+  };
   const controller = createBackgroundController({ chrome });
   await controller.handleInstalled();
   assert.equal(chrome.storage.removed, 'isLocked');
   assert.equal(chrome.storage.saved.deepLock, true);
   assert.equal(Object.prototype.hasOwnProperty.call(chrome.storage.saved, 'isLocked'), false);
 
+  const session = { handlers: {}, setActionHandler(action, handler) { this.handlers[action] = handler; } };
+  const main = createMainController({ mediaSession: session });
+  globalThis.__YTL_FACTORIES__ = { rebindMainGuard: main.privilegedRebind };
   globalThis.__YT_SCREEN_LOCKER_MAIN_GUARD__ = {
-    ensureArmed: (seal, token) => seal === SEAL && token === 'real-session-token',
-    update: () => true
+    ensureArmed: main.ensureArmed,
+    update: main.update,
+    getState: main.getState
   };
-  const response = await new Promise((resolve) => {
+  const guess = 'f'.repeat(40);
+  assert.equal(main.ensureArmed(guess, 'token-aaaaaaaaaaaaaaa'), false);
+  assert.equal(main.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: true, blockMediaKeys: true, guardVolume: true }), false);
+  assert.equal(main.getState().locked, false);
+
+  const first = await new Promise((resolve) => {
     controller.handleMessage({
       type: 'sync-main',
-      token: 'attacker-session-token',
-      state: { locked: false }
+      token: 'token-aaaaaaaaaaaaaaa',
+      state: { locked: true, blockMediaKeys: true, guardVolume: true }
     }, { tab: { id: 3 } }, resolve);
   });
-  assert.equal(response.ok, false);
-  assert.equal(response.reason, 'rejected');
-  const direct = mainGuardApply(SEAL, 'real-session-token', { locked: true });
+  assert.equal(first.ok, true);
+  assert.equal(main.getState().locked, true);
+  assert.equal(typeof session.handlers.pause, 'function');
+  assert.equal(main.update(guess, 'token-aaaaaaaaaaaaaaa', { locked: false }), false);
+  assert.equal(main.getState().locked, true);
+
+  sessionStore.ytlRuntimeSecret = 'ab'.repeat(32);
+  const second = await new Promise((resolve) => {
+    controller.handleMessage({
+      type: 'sync-main',
+      token: 'token-bbbbbbbbbbbbbbb',
+      state: { locked: false, blockMediaKeys: false, guardVolume: false }
+    }, { tab: { id: 3 } }, resolve);
+  });
+  assert.equal(second.ok, true);
+  assert.equal(main.getState().locked, false);
+  assert.equal(main.getState().blockMediaKeys, false);
+  assert.equal(main.update(sessionStore.ytlRuntimeSecret, 'token-aaaaaaaaaaaaaaa', { locked: true }), false);
+  assert.equal(main.update(sessionStore.ytlRuntimeSecret, 'token-bbbbbbbbbbbbbbb', {
+    locked: true,
+    blockMediaKeys: false,
+    guardVolume: true
+  }), true);
+  const direct = mainGuardApply('cd'.repeat(16), 'token-ccccccccccccccc', {
+    locked: false,
+    blockMediaKeys: true,
+    guardVolume: false
+  });
   assert.equal(direct.ok, true);
+  assert.equal(main.getState().locked, false);
+  delete globalThis.__YTL_FACTORIES__;
   delete globalThis.__YT_SCREEN_LOCKER_MAIN_GUARD__;
 });
 

@@ -180,6 +180,96 @@ test('volume changes made under the prototype are restored without looping', () 
   assert.equal(video.volume, 1);
 });
 
+test('an ad handoff keeps pause protection and the locked volume', () => {
+  const Fake = createMediaClass();
+  let plays = 0;
+  const basePlay = Fake.prototype.play;
+  Fake.prototype.play = function play() {
+    plays += 1;
+    return basePlay.call(this);
+  };
+  const video = new Fake();
+  video.currentSrc = 'https://www.youtube.com/ad';
+  video.volume = 0.8;
+  video.muted = false;
+  const guard = guardFor(Fake, [video]);
+  guard.setState({ locked: true, blockMediaKeys: true, guardVolume: true });
+
+  video._volume = 0.1;
+  video._muted = true;
+  video.currentSrc = '';
+  video.readyState = 0;
+  video.paused = true;
+  video.emit('emptied');
+  assert.equal(guard.baseline(video).volume, 0.8);
+  assert.equal(guard.baseline(video).muted, false);
+  assert.equal(guard.baseline(video).wasPlaying, false);
+
+  video.paused = false;
+  video.readyState = 0;
+  video.currentSrc = '';
+  video.emit('play');
+  assert.equal(guard.baseline(video).wasPlaying, true);
+  assert.equal(guard.baseline(video).volume, 0.8);
+
+  video.readyState = 2;
+  video.currentSrc = 'https://www.youtube.com/watch?v=main';
+  video._volume = 0.05;
+  video._muted = true;
+  video.emit('loadeddata');
+  assert.equal(guard.baseline(video).wasPlaying, true);
+  assert.equal(guard.baseline(video).volume, 0.8);
+  assert.equal(guard.baseline(video).muted, false);
+
+  video.readyState = 4;
+  video.paused = false;
+  video.emit('playing');
+  assert.equal(guard.baseline(video).wasPlaying, true);
+  assert.equal(guard.baseline(video).src, 'https://www.youtube.com/watch?v=main');
+  assert.equal(guard.baseline(video).volume, 0.8);
+
+  video.pause();
+  assert.equal(video.paused, false);
+  assert.equal(plays >= 1, true);
+  assert.equal(video.volume, 0.8);
+  assert.equal(video.muted, false);
+});
+
+test('document_start waits for DOMContentLoaded before observing', () => {
+  const Fake = createMediaClass();
+  const video = new Fake();
+  let observed = 0;
+  const doc = {
+    documentElement: null,
+    body: null,
+    readyState: 'loading',
+    listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    querySelectorAll() { return this.documentElement ? [video] : []; }
+  };
+  function Observer() {}
+  Observer.prototype.observe = function observe() { observed += 1; };
+  createVideoGuard({
+    document: doc,
+    view: {
+      HTMLMediaElement: Fake,
+      HTMLVideoElement: Fake,
+      document: doc,
+      MutationObserver: Observer
+    }
+  });
+  assert.equal(observed, 0);
+  assert.equal(typeof doc.listeners.DOMContentLoaded, 'function');
+  doc.documentElement = { nodeName: 'HTML' };
+  doc.body = { nodeName: 'BODY' };
+  doc.listeners.DOMContentLoaded();
+  doc.listeners.DOMContentLoaded();
+  assert.equal(observed, 1);
+  assert.equal(video.listeners.play.length >= 1, true);
+  assert.equal(video.listeners.playing.length >= 1, true);
+  assert.equal(video.listeners.loadeddata, undefined);
+});
+
 test('non-video media is left alone', () => {
   const Fake = createMediaClass();
   const audio = new Fake();

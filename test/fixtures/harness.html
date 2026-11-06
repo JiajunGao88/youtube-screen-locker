@@ -30,6 +30,11 @@
       if (!cond) failed.push(message);
     }
     try {
+      if (!navigator.keyboard) navigator.keyboard = {};
+      if (typeof navigator.keyboard.lock !== 'function') {
+        navigator.keyboard.lock = function lock() { return Promise.resolve(); };
+        navigator.keyboard.unlock = function unlock() {};
+      }
       const chromeMock = {
         runtime: {
           sendMessage() { return Promise.resolve(); },
@@ -67,6 +72,26 @@
       document.body.dispatchEvent(shortcut);
       check(locker.getState().locked === before, 'untrusted shortcut does not toggle');
       check(!!document.getElementById('movie_player').querySelector('.ytl-lock-btn'), 'player button exists');
+      const player = document.getElementById('movie_player');
+      let playerClicks = 0;
+      player.addEventListener('click', () => { playerClicks += 1; }, true);
+      player.addEventListener('pointerdown', () => { playerClicks += 1; }, true);
+      player.addEventListener('touchstart', () => { playerClicks += 1; }, true);
+      window.__YSL = {
+        locker,
+        chip: locker.debug.hud.chip,
+        hold: locker.debug.hud.holdBtn,
+        host: locker.debug.hud.host,
+        activation: null,
+        fullscreenCalls: 0,
+        playerClicks: () => playerClicks
+      };
+      player.requestFullscreen = function requestFullscreen() {
+        window.__YSL.activation = !!(navigator.userActivation && navigator.userActivation.isActive);
+        window.__YSL.fullscreenCalls += 1;
+        return Promise.resolve();
+      };
+      player.appendChild(locker.debug.hud.host);
     } catch (err) {
       errors.push(String(err && err.stack || err));
     }

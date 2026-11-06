@@ -15,10 +15,11 @@
 
   var api = {
     brand: 'yt-screen-locker-main-v2',
-    ensureArmed: function (seal, token) { return controller.ensureArmed(seal, token); },
-    update: function (seal, token, state) { return controller.update(seal, token, state); },
+    ensureArmed: function (secret, token) { return controller.ensureArmed(secret, token); },
+    update: function (secret, token, state) { return controller.update(secret, token, state); },
     getState: function () { return controller.getState(); }
   };
+  if (factories) factories.rebindMainGuard = controller.privilegedRebind;
 
   try {
     Object.defineProperty(root, '__YT_SCREEN_LOCKER_MAIN_GUARD__', {

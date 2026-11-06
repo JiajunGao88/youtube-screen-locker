@@ -39,6 +39,80 @@ async function fetchJson(url, method) {
   }
 }
 
+function openSocket(url) {
+  const socket = new WebSocket(url);
+  const pending = new Map();
+  let nextId = 1;
+  socket.addEventListener('message', (event) => {
+    const payload = JSON.parse(event.data);
+    if (payload.id && pending.has(payload.id)) {
+      pending.get(payload.id)(payload);
+      pending.delete(payload.id);
+    }
+  });
+  const ready = new Promise((resolve, reject) => {
+    socket.addEventListener('open', resolve);
+    socket.addEventListener('error', reject);
+  });
+  return ready.then(() => ({
+    close() { socket.close(); },
+    send(method, params) {
+      const id = nextId++;
+      socket.send(JSON.stringify({ id, method, params }));
+      return new Promise((resolve) => pending.set(id, resolve));
+    }
+  }));
+}
+
+async function assertChipGesture(send, kind) {
+  const pointEval = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const chip = window.__YSL.chip;
+      const rect = chip.getBoundingClientRect();
+      window.__YSL.activation = null;
+      window.__YSL.fullscreenCalls = 0;
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        w: rect.width,
+        h: rect.height,
+        hidden: !!chip.hidden
+      };
+    })()`,
+    returnByValue: true
+  });
+  const point = pointEval.result && pointEval.result.result && pointEval.result.result.value;
+  assert.ok(point && point.w > 0 && point.h > 0, kind + ' chip has no layout ' + JSON.stringify(point));
+  assert.equal(point.hidden, false, kind + ' chip is hidden');
+  if (kind === 'mouse') {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1
+    });
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1
+    });
+  } else {
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    await send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: point.x, y: point.y, id: 1 }]
+    });
+    await send('Input.dispatchTouchEvent', {
+      type: 'touchEnd',
+      touchPoints: []
+    });
+  }
+  await wait(100);
+  const outcome = await send('Runtime.evaluate', {
+    expression: '({ activation: window.__YSL.activation, calls: window.__YSL.fullscreenCalls, clicks: window.__YSL.playerClicks() })',
+    returnByValue: true
+  });
+  const value = outcome.result && outcome.result.result && outcome.result.result.value;
+  assert.equal(value.calls >= 1, true, kind + ' did not request fullscreen');
+  assert.equal(value.activation, true, kind + ' lost transient user activation ' + JSON.stringify(value));
+  assert.equal(value.clicks, 0, kind + ' reached the player');
+}
+
 test('headless Chrome DOM harness has no console errors', { timeout: 60000 }, async (t) => {
   if (!chromeBin) {
     t.skip('Chrome is not installed');
@@ -54,6 +128,7 @@ test('headless Chrome DOM harness has no console errors', { timeout: 60000 }, as
     '--no-sandbox',
     '--disable-gpu',
     '--disable-dev-shm-usage',
+    '--touch-events=enabled',
     '--no-first-run',
     '--disable-features=DisableLoadExtensionCommandLineSwitch',
     '--disable-extensions-except=' + root,
@@ -118,6 +193,51 @@ test('headless Chrome DOM harness has no console errors', { timeout: 60000 }, as
     assert.deepEqual(result.failed, []);
     assert.deepEqual(result.errors, []);
     assert.equal(result.ok, true);
+    await assertChipGesture(send, 'mouse');
+    const touchPage = await fetchJson(`http://127.0.0.1:${debugPort}/json/new?${harnessUrl}`, 'PUT');
+    const touchSocket = await openSocket(touchPage.webSocketDebuggerUrl);
+    try {
+      await touchSocket.send('Runtime.enable');
+      let touchReady = null;
+      for (let i = 0; i < 40; i += 1) {
+        const evaluated = await touchSocket.send('Runtime.evaluate', {
+          expression: 'document.documentElement.dataset.yslResult || ""',
+          returnByValue: true
+        });
+        const value = evaluated.result && evaluated.result.result && evaluated.result.result.value;
+        if (value) {
+          touchReady = JSON.parse(value);
+          break;
+        }
+        await wait(200);
+      }
+      assert.equal(touchReady && touchReady.ok, true);
+      await assertChipGesture(touchSocket.send, 'touch');
+      const hold = await touchSocket.send('Runtime.evaluate', {
+        expression: `(() => {
+          const rect = window.__YSL.hold.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, calls: window.__YSL.fullscreenCalls };
+        })()`,
+        returnByValue: true
+      });
+      const holdPoint = hold.result.result.value;
+      const beforeHold = holdPoint.calls;
+      await touchSocket.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: holdPoint.x, y: holdPoint.y, id: 3 }]
+      });
+      await touchSocket.send('Input.dispatchTouchEvent', {
+        type: 'touchEnd',
+        touchPoints: []
+      });
+      const afterHold = await touchSocket.send('Runtime.evaluate', {
+        expression: 'window.__YSL.fullscreenCalls',
+        returnByValue: true
+      });
+      assert.equal(afterHold.result.result.value, beforeHold);
+    } finally {
+      touchSocket.close();
+    }
 
     const exceptions = messages.filter((message) => message.method === 'Runtime.exceptionThrown');
     assert.deepEqual(exceptions, []);
