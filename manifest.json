@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
   "name": "YouTube Screen Locker",
-  "version": "1.1",
-  "description": "No more accidental clicks while you're watching videos.",
+  "version": "2.0.0",
+  "minimum_chrome_version": "111",
+  "description": "Lock YouTube against accidental clicks, shortcuts, and hardware media keys. Optional fullscreen deep lock shields browser and system shortcuts on Windows.",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "*://*.youtube.com/*"
@@ -19,15 +21,36 @@
       "128": "icons/icon128.png"
     }
   },
-  "content_scripts": [{
-    "matches": ["*://*.youtube.com/*"],
-    "js": ["content.js"],
-    "css": ["styles.css"],
-    "run_at": "document_end"
-  }],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": [
+        "lib/constants.js",
+        "lib/platform.js",
+        "lib/hostname.js",
+        "lib/settings.js",
+        "lib/hold-unlock.js",
+        "lib/event-guard.js",
+        "lib/fullscreen-lock.js",
+        "lib/hud.js",
+        "lib/screen-locker.js",
+        "content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": [
+        "lib/media-session-guard.js",
+        "lib/video-guard.js",
+        "main-world-guard.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "commands": {
     "toggle-lock": {
@@ -35,13 +58,9 @@
         "default": "Ctrl+Shift+L",
         "mac": "Command+Shift+L"
       },
-      "description": "Change Status"
+      "description": "Toggle YouTube screen lock"
     }
   },
-  "web_accessible_resources": [{
-    "resources": ["popup.html", "styles.css"],
-    "matches": ["*://*.youtube.com/*"]
-  }],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
