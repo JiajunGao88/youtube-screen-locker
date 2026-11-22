@@ -3,7 +3,7 @@
   "name": "YouTube Screen Locker",
   "version": "2.0.0",
   "minimum_chrome_version": "111",
-  "description": "Lock YouTube against accidental clicks, shortcuts, and hardware media keys. Optional fullscreen deep lock shields browser and system shortcuts on Windows.",
+  "description": "Lock YouTube against accidental clicks, shortcuts and media keys. Optional fullscreen deep lock blocks system shortcuts on Windows.",
   "permissions": [
     "activeTab",
     "storage",
